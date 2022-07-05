@@ -29,6 +29,10 @@ type Test struct {
     Name    string
 }
 
+func (self *Test) TableName() string {
+    return "test_tab"
+}
+
 func (suite *PostgresTestSuite) SetupTest() {
     dsn := "host=postgres user=postgres password=postgres port=5432 sslmode=disable"
 
