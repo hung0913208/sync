@@ -9,8 +9,8 @@
 
 -- Table Definition
 CREATE TABLE "test_tab" (
-    "Id"    varchar(150) NOT NULL,
-    "Name"  varchar(32) NOT NULL,
-    PRIMARY KEY ("MigrationId")
+    "id"    SERIAL,
+    "name"  varchar(32) NOT NULL,
+    PRIMARY KEY ("id")
 );
 

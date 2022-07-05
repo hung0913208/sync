@@ -5,6 +5,7 @@ import (
     "io/ioutil"
     "testing"
     "time"
+    "sync"
     "fmt"
     "os"
 
@@ -24,8 +25,6 @@ type PostgresTestSuite struct {
 }
 
 type Test struct {
-    gorm.Model
-    Id      int     `gorm:"primaryKey"`
     Name    string
 }
 
@@ -99,17 +98,28 @@ func TestPostgres(t *testing.T) {
 }
 
 func (suite *PostgresTestSuite) TestCatchingInsertRequest() {
+    wg := &sync.WaitGroup{}
     cnt := 0
 
-    result := suite.db.Create(&Test{Id: 1, Name: "test"})
+    wg.Add(1)
+
+    go func() {
+        defer wg.Done()
+
+        suite.notifier.Notify(func(msg string) error {
+            cnt += 1
+            fmt.Println(msg)
+            return nil
+        },
+        60 * time.Second)
+    }()
+
+    err := suite.notifier.Register("test_tab")
+    assert.Nil(suite.T(), err)
+
+    result := suite.db.Create(&Test{Name: "test"})
     assert.Nil(suite.T(), result.Error)
 
-    suite.notifier.Notify(func(msg string) error {
-        cnt += 1
-        fmt.Println(msg)
-        return nil
-    },
-    time.Second)
-
+    wg.Wait()
     assert.Equal(suite.T(), cnt, 1)
 }
