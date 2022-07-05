@@ -27,7 +27,7 @@ jobs:
       - name: Setup environment for developing
         run: |
           apt update
-          apt install -y golang make
+          apt install -y golang make postgresql
 
       - name: Validate postgreqsql server has started
         run: pg_isready -U "postgres" -h postgres -p 5432
