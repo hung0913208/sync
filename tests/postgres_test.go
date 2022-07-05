@@ -60,20 +60,17 @@ func (suite *PostgresTestSuite) SetupTest() {
 
     cnt := 0
     err = filepath.Walk("fixture", func(path string, f os.FileInfo, err error) error {
-        if filepath.Ext(path) == "sql" {
-            query, err := ioutil.ReadFile(path)
-            if err != nil {
-                return err
-            }
-
-            tx := db.Exec(string(query))
-            if tx.Error != nil {
-                panic(tx.Error)
-            }
-
-            cnt += 1
+        query, err := ioutil.ReadFile(path)
+        if err != nil {
+            return err
         }
 
+        tx := db.Exec(string(query))
+        if tx.Error != nil {
+            panic(tx.Error)
+        }
+
+        cnt += 1
         return nil
     })
 
