@@ -1,4 +1,4 @@
-# Binaries for programs and plugins
+# Binaries for programs and plugins git
 *.exe
 *.exe~
 *.dll
@@ -195,15 +195,6 @@ hs_err_pid*
 *.su
 *.idb
 *.pdb
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
 
 
 ###C++###
