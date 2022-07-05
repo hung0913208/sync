@@ -5,7 +5,7 @@
 ######################################################################
 
 env:
-	go env -w GO111MODULE=on
+	go env -w GO111MODULE=on GOPROXY=direct GOFLAGS="-insecure"
 
 tidy: env
 	go mod tidy
