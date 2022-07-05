@@ -58,6 +58,7 @@ func (suite *PostgresTestSuite) SetupTest() {
         panic(err)
     }
 
+    cnt := 0
     err = filepath.Walk("fixture", func(path string, f os.FileInfo, err error) error {
         if filepath.Ext(path) == "sql" {
             query, err := ioutil.ReadFile(path)
@@ -69,10 +70,16 @@ func (suite *PostgresTestSuite) SetupTest() {
             if tx.Error != nil {
                 panic(tx.Error)
             }
+
+            cnt += 1
         }
 
         return nil
     })
+
+    if cnt == 0 {
+        panic("can't perform fixture")
+    }
 
     notifier, err := notify.NewPostgresNotifier(dsn) 
     if err != nil {
