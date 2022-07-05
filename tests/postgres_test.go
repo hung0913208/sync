@@ -30,7 +30,7 @@ type Test struct {
 }
 
 func (suite *PostgresTestSuite) SetupTest() {
-    dsn := "host=postgres user=postgres port=5432 sslmode=disable"
+    dsn := "host=postgres user=postgres password=postgres port=5432 sslmode=disable"
 
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{}) 
     if err != nil {
@@ -40,7 +40,7 @@ func (suite *PostgresTestSuite) SetupTest() {
     db.Exec("DROP DATABASE IF EXISTS test_db;")
     db.Exec("CREATE DATABASE test_db;")
 
-    dsn = "host=postgres user=postgres dbname=test_db port=5432 sslmode=disable"
+    dsn = "host=postgres user=postgres password=postgres dbname=test_db port=5432 sslmode=disable"
 
     db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{}) 
     if err != nil {
