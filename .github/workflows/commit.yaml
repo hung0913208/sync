@@ -14,7 +14,12 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Setup environment for developing
-        run: sudo apt install -y golang make postgres
+        run: sudo apt install -y golang make postgresql
+
+      - name: Validate postgreqsql server has started
+        run: |
+          sleep 10
+          pg_isready -U "postgres" -h 127.0.0.1 -p 5432
 
       - name: Run unit test suites
         run: make test
