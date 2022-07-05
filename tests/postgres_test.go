@@ -35,7 +35,6 @@ func (self *Test) TableName() string {
 
 func (suite *PostgresTestSuite) SetupTest() {
     dsn := "host=postgres user=postgres password=postgres port=5432 sslmode=disable"
-    cnt := 0
 
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{}) 
     if err != nil {
@@ -59,18 +58,22 @@ func (suite *PostgresTestSuite) SetupTest() {
         panic(err)
     }
 
-    err = filepath.Walk("./fixture", func(path string, f os.FileInfo, err error) error {
-        query, err := ioutil.ReadFile(path)
-        if err != nil {
-            panic(err)
+    cnt := 0
+    err = filepath.Walk("../fixture", func(path string, f os.FileInfo, err error) error {
+        if filepath.Ext(path) == "sql" {
+            query, err := ioutil.ReadFile(path)
+            if err != nil {
+                return err
+            }
+
+            tx := db.Exec(string(query))
+            if tx.Error != nil {
+                panic(tx.Error)
+            }
+
+            cnt += 1
         }
 
-        tx := db.Exec(string(query))
-        if tx.Error != nil {
-            panic(tx.Error)
-        }
-
-        cnt += 1
         return nil
     })
 
