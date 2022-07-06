@@ -32,7 +32,7 @@ func (self *Test) TableName() string {
     return "test_tab"
 }
 
-func (suite *PostgresTestSuite) SetupTest() {
+func (suite *PostgresTestSuite) SetupSuite() {
     dsn := "host=postgres user=postgres password=postgres port=5432 sslmode=disable"
 
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{}) 
@@ -91,6 +91,11 @@ func (suite *PostgresTestSuite) SetupTest() {
 
     suite.notifier = notifier
     suite.db = db
+
+    err = suite.notifier.Register("test_tab")
+    if err != nil {
+        panic(err)
+    }
 }
 
 func TestPostgres(t *testing.T) {
@@ -114,12 +119,85 @@ func (suite *PostgresTestSuite) TestCatchingInsertRequest() {
         60 * time.Second)
     }()
 
-    err := suite.notifier.Register("test_tab")
-    assert.Nil(suite.T(), err)
-
     result := suite.db.Create(&Test{Name: "test"})
     assert.Nil(suite.T(), result.Error)
 
     wg.Wait()
-    assert.Equal(suite.T(), cnt, 1)
+    assert.Equal(suite.T(), 1, cnt)
+}
+
+func (suite *PostgresTestSuite) TestMultiplePushing() {
+    wg := &sync.WaitGroup{}
+    cnt := 0
+
+    wg.Add(1)
+
+    go func() {
+        defer wg.Done()
+
+        for {
+            err := suite.notifier.Notify(func(msg string) error {
+                cnt += 1
+                fmt.Println(msg)
+                return nil
+            },
+            time.Second)
+
+            if err != nil {
+                break
+            }
+        }
+    }()
+
+    for i := 0; i < 10; i++ {
+        wg.Add(1)
+
+        go func() {
+            defer wg.Done()
+            result := suite.db.Create(&Test{Name: "test"})
+            assert.Nil(suite.T(), result.Error) 
+        }()
+    }
+
+    wg.Wait()
+    assert.Equal(suite.T(), 10, cnt)
+}
+
+func (suite *PostgresTestSuite) TestLaggingIssue() {
+    wg := &sync.WaitGroup{}
+    cnt := 0
+
+    wg.Add(1)
+
+    go func() {
+        defer wg.Done()
+
+        for {
+            err := suite.notifier.Notify(func(msg string) error {
+                cnt += 1
+                fmt.Println(msg)
+                return nil
+            },
+            time.Second)
+
+            if err != nil {
+                break
+            }
+
+            time.Sleep(1)
+        }
+    }()
+
+    for i := 0; i < 10; i++ {
+        wg.Add(1)
+
+        go func() {
+            defer wg.Done()
+            result := suite.db.Create(&Test{Name: "test"})
+            assert.Nil(suite.T(), result.Error)
+        }()
+    }
+
+    wg.Wait()
+    assert.Equal(suite.T(), 10, cnt)
 }
