@@ -32,7 +32,7 @@ func (self *Test) TableName() string {
     return "test_tab"
 }
 
-func (suite *PostgresTestSuite) SetupTest() {
+func (suite *PostgresTestSuite) SetupSuite() {
     dsn := "host=postgres user=postgres password=postgres port=5432 sslmode=disable"
 
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{}) 
