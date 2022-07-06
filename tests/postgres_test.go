@@ -91,6 +91,11 @@ func (suite *PostgresTestSuite) SetupSuite() {
 
     suite.notifier = notifier
     suite.db = db
+
+    err = suite.notifier.Register("test_tab")
+    if err != nil {
+        panic(err)
+    }
 }
 
 func TestPostgres(t *testing.T) {
@@ -114,14 +119,11 @@ func (suite *PostgresTestSuite) TestCatchingInsertRequest() {
         60 * time.Second)
     }()
 
-    err := suite.notifier.Register("test_tab")
-    assert.Nil(suite.T(), err)
-
     result := suite.db.Create(&Test{Name: "test"})
     assert.Nil(suite.T(), result.Error)
 
     wg.Wait()
-    assert.Equal(suite.T(), cnt, 1)
+    assert.Equal(suite.T(), 1, cnt)
 }
 
 func (suite *PostgresTestSuite) TestMultiplePushing() {
@@ -133,26 +135,25 @@ func (suite *PostgresTestSuite) TestMultiplePushing() {
     go func() {
         defer wg.Done()
 
-        suite.notifier.Notify(func(msg string) error {
-            cnt += 1
-            fmt.Println(msg)
-            return nil
-        },
-        60 * time.Second)
+        for {
+            err := suite.notifier.Notify(func(msg string) error {
+                cnt += 1
+                fmt.Println(msg)
+                return nil
+            },
+            60 * time.Second)
+
+            if err != nil {
+                break
+            }
+        }
     }()
 
-    err := suite.notifier.Register("test_tab")
-    assert.Nil(suite.T(), err)
-
-    for i := 0; i < 1000; i++ {
-        wg.Add(1)
-        go func() {
-            defer wg.Done()
-            result := suite.db.Create(&Test{Name: "test"})
-            assert.Nil(suite.T(), result.Error)
-        }()
+    for i := 0; i < 10; i++ {
+        result := suite.db.Create(&Test{Name: "test"})
+        assert.Nil(suite.T(), result.Error)
     }
 
     wg.Wait()
-    assert.Equal(suite.T(), cnt, 1000)
+    assert.Equal(suite.T(), 1000, cnt)
 }
