@@ -123,3 +123,36 @@ func (suite *PostgresTestSuite) TestCatchingInsertRequest() {
     wg.Wait()
     assert.Equal(suite.T(), cnt, 1)
 }
+
+func (suite *PostgresTestSuite) TestMultiplePushing() {
+    wg := &sync.WaitGroup{}
+    cnt := 0
+
+    wg.Add(1)
+
+    go func() {
+        defer wg.Done()
+
+        suite.notifier.Notify(func(msg string) error {
+            cnt += 1
+            fmt.Println(msg)
+            return nil
+        },
+        60 * time.Second)
+    }()
+
+    err := suite.notifier.Register("test_tab")
+    assert.Nil(suite.T(), err)
+
+    for i := 0; i < 1000; i++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            result := suite.db.Create(&Test{Name: "test"})
+            assert.Nil(suite.T(), result.Error)
+        }()
+    }
+
+    wg.Wait()
+    assert.Equal(suite.T(), cnt, 1000)
+}
