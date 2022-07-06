@@ -141,7 +141,7 @@ func (suite *PostgresTestSuite) TestMultiplePushing() {
                 fmt.Println(msg)
                 return nil
             },
-            60 * time.Second)
+            time.Second)
 
             if err != nil {
                 break
@@ -150,10 +150,54 @@ func (suite *PostgresTestSuite) TestMultiplePushing() {
     }()
 
     for i := 0; i < 10; i++ {
-        result := suite.db.Create(&Test{Name: "test"})
-        assert.Nil(suite.T(), result.Error)
+        wg.Add(1)
+
+        go func() {
+            defer wg.Done()
+            result := suite.db.Create(&Test{Name: "test"})
+            assert.Nil(suite.T(), result.Error) 
+        }()
     }
 
     wg.Wait()
-    assert.Equal(suite.T(), 1000, cnt)
+    assert.Equal(suite.T(), 10, cnt)
+}
+
+func (suite *PostgresTestSuite) TestLaggingIssue() {
+    wg := &sync.WaitGroup{}
+    cnt := 0
+
+    wg.Add(1)
+
+    go func() {
+        defer wg.Done()
+
+        for {
+            err := suite.notifier.Notify(func(msg string) error {
+                cnt += 1
+                fmt.Println(msg)
+                return nil
+            },
+            time.Second)
+
+            if err != nil {
+                break
+            }
+
+            time.Sleep(1)
+        }
+    }()
+
+    for i := 0; i < 10; i++ {
+        wg.Add(1)
+
+        go func() {
+            defer wg.Done()
+            result := suite.db.Create(&Test{Name: "test"})
+            assert.Nil(suite.T(), result.Error)
+        }()
+    }
+
+    wg.Wait()
+    assert.Equal(suite.T(), 10, cnt)
 }
