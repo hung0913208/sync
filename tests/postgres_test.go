@@ -40,15 +40,8 @@ func (suite *PostgresTestSuite) SetupSuite() {
         panic(err)
     }
 
-    tx := db.Exec("DROP DATABASE IF EXISTS test_db;")
-    if tx.Error != nil {
-        panic(tx.Error)
-    }
-
-    tx = db.Exec("CREATE DATABASE test_db;")
-    if tx.Error != nil {
-        panic(tx.Error)
-    }
+    db.Exec("DROP DATABASE IF EXISTS test_db;")
+    db.Exec("CREATE DATABASE test_db;")
 
     dsn = "host=postgres user=postgres password=postgres dbname=test_db port=5432 sslmode=disable"
 
