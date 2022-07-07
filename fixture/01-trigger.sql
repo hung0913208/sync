@@ -7,7 +7,9 @@ begin
 		'action', TG_OP,
 		'schema', TG_TABLE_SCHEMA,
 		'table', TG_TABLE_NAME,
-		'data', row_to_json(NEW)
+		'relid', TG_RELID,
+		'new', row_to_json(NEW),
+		'old', row_to_json(OLD)
         );
    	perform pg_notify('event_channel', payload::text);
    	return null;
