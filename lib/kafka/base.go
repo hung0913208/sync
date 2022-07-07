@@ -13,6 +13,8 @@ type Producer interface {
 type Consumer interface {
     Subscribe(key string, handler Handler) error
     HandleError(err error)
+    Lock()
+    Unlock()
     Close()
 }
 

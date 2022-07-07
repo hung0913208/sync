@@ -14,19 +14,22 @@ import (
 
 type Monitor func(id int, msg string)
 
-type SyncGdsManager interface {
+type SynchronizeGdsManager interface {
     RegisterTable(service string, notifierIdx int, table string) error
     RegisterMonitor(service string, monitor Monitor)
     HandleSyncGdsToKafka(timeout time.Duration)
+    HandleSyncGdsToKafkaInBackground(timeou time.Duration)
 }
 
-type implSyncGdsManager struct {
+type implSynchronizeGdsManager struct {
     mapOfNotifiers  map[string][]notify.Notifier
     producer        kafka.Producer
     monitors        map[string]Monitor
+    running         bool
+    wg              *sync.WaitGroup
 }
 
-func (self *implSyncGdsManager) RegisterTable(
+func (self *implSynchronizeGdsManager) RegisterTable(
     service string,
     notifierIdx int,
     table string,
@@ -42,28 +45,33 @@ func (self *implSyncGdsManager) RegisterTable(
     return self.mapOfNotifiers[service][notifierIdx].Register(table)
 }
 
-func (self *implSyncGdsManager) RegisterMonitor(
+func (self *implSynchronizeGdsManager) RegisterMonitor(
     service string, 
     monitor Monitor,
 ) {
     self.monitors[service] = monitor
 }
 
-func (self *implSyncGdsManager) HandleSyncGdsToKafka(timeout time.Duration) {
-    wg := &sync.WaitGroup{}
-    running := true
+func (self *implSynchronizeGdsManager) HandleSyncGdsToKafka(timeout time.Duration) {
     sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
 
+    self.HandleSyncGdsToKafkaInBackground(timeout)
+
+    <-sigchan
+    self.Close()
+}
+
+func (self *implSynchronizeGdsManager) HandleSyncGdsToKafkaInBackground(timeout time.Duration) {
     for service, notifiers := range self.mapOfNotifiers {
         for id, notifier := range notifiers {
-            wg.Add(1)
-
+            self.wg.Add(1)
+            
             go func(notifier notify.Notifier) {
-                defer wg.Done()
-
+                defer self.wg.Done()
+                
                 for {
-                    if running == false {
+                    if self.running == false {
                         break
                     }
 
@@ -73,34 +81,32 @@ func (self *implSyncGdsManager) HandleSyncGdsToKafka(timeout time.Duration) {
             } (notifier)
         }
     }
-
-    <-sigchan
-    running = false
-    wg.Wait()
 }
 
-func (self *implSyncGdsManager) pushGdsToKafka(service string, id int) notify.Handler {
+func (self *implSynchronizeGdsManager) Close() {
+    self.running = false 
+    self.wg.Wait()
+}
+
+func (self *implSynchronizeGdsManager) pushGdsToKafka(service string, id int) notify.Handler {
     return func(msg string) error {
         err := self.producer.PublishMessage(service, msg)
         if err == nil {
-            fmt.Println("catch", msg)
             if monitor, ok := self.monitors[service]; ok {
                 monitor(id, msg)
-            } else {
-                fmt.Println("not found", msg)
             }
         }
         return err
     }
 }
 
-func NewSyncGdsManager(
+func NewSynchronizeGdsManager(
     postgresDsn []string,
     numPartitions, replicationFactor int,
     brokers []string, 
     topic string,
     timeout time.Duration,
-) (SyncGdsManager, error) { 
+) (SynchronizeGdsManager, error) { 
     postgresNotifiers := make([]notify.Notifier, 0)
 
     for _, dsn := range postgresDsn {
@@ -124,9 +130,10 @@ func NewSyncGdsManager(
         return nil, err
     }
 
-    return &implSyncGdsManager{
+    return &implSynchronizeGdsManager{
         mapOfNotifiers: mapOfNotifiers,
         producer:       producer,
         monitors:       make(map[string]Monitor),
+        wg:             &sync.WaitGroup{},
     }, nil
 }

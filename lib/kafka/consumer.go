@@ -19,6 +19,8 @@ type implConsumerClient struct {
     started     bool
     closing     chan bool
     closed      chan bool
+    locked      chan bool
+    unlocked    chan bool
 }
 
 func (self *implConsumerClient) Subscribe(key string, handler Handler) error {
@@ -37,6 +39,8 @@ func (self *implConsumerClient) Subscribe(key string, handler Handler) error {
         go func() {
             for {
                 select {
+                case <- self.locked:
+                    <-self.unlocked
                 case <- self.closing:
                     self.closed <- true
                     return
@@ -82,6 +86,14 @@ func (self *implConsumerClient) HandleError(err error) {
     fmt.Println("error", err)
 }
 
+func (self *implConsumerClient) Lock() {
+    self.locked <- true
+}
+
+func (self *implConsumerClient) Unlock() {
+    self.unlocked <- true
+}
+
 func (self *implConsumerClient) Close() {
     self.closing <- true
 
@@ -116,5 +128,7 @@ func NewConsumer(
         started:    false,
         closing:    make(chan bool, 1),
         closed:     make(chan bool, 1),
+        locked:     make(chan bool, 1),
+        unlocked:   make(chan bool, 1),
     }, nil
 }

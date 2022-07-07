@@ -80,7 +80,7 @@ func (suite *SyncGdsTestSuite) SetupSuite() {
 
 func (suite *SyncGdsTestSuite) TestSyncGdsToKafka() {
     cnt := 0
-    syncGdsManager, err := sync_gds_manager.NewSyncGdsManager(
+    syncGdsManager, err := sync_gds_manager.NewSynchronizeGdsManager(
         manager.PostgresDsnList,
         manager.KafkaNumPartitions,
         manager.KafkaReeplicationFactor,
