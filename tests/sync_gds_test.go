@@ -21,7 +21,7 @@ import (
 
 type SyncGdsTestSuite struct {
     suite.Suite
-    db          *gorm.DB
+    db *gorm.DB
 }
 
 func TestSyncGds(t *testing.T) {
@@ -38,7 +38,7 @@ func (self *TestSync) TableName() string {
 
 
 func (suite *SyncGdsTestSuite) SetupSuite() {
-    dsn := "host=postgres user=postgres password=postgres port=5432 sslmode=disable"
+    dsn := "host=production-postgres user=postgres password=postgres port=5432 sslmode=disable"
 
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{}) 
     if err != nil {
@@ -47,7 +47,7 @@ func (suite *SyncGdsTestSuite) SetupSuite() {
 
     db.Exec("CREATE DATABASE test_db;")
 
-    dsn = "host=postgres user=postgres password=postgres dbname=test_db port=5432 sslmode=disable"
+    dsn = "host=production-postgres user=postgres password=postgres dbname=test_db port=5432 sslmode=disable"
     cnt := 0
     err = filepath.Walk("../fixture", func(path string, f os.FileInfo, err error) error {
         if filepath.Ext(path) == ".sql" {
@@ -81,11 +81,11 @@ func (suite *SyncGdsTestSuite) SetupSuite() {
 func (suite *SyncGdsTestSuite) TestSyncGdsToKafka() {
     cnt := 0
     syncGdsManager, err := sync_gds_manager.NewSynchronizeGdsManager(
-        manager.PostgresDsnList,
+        manager.ProductionPostgresDsnList,
         manager.KafkaNumPartitions,
         manager.KafkaReeplicationFactor,
-        manager.KafkaBrokerList,
-        manager.GdsKafkaTopic,
+        manager.ProductionKafkaBrokerList,
+        manager.ProductionGdsKafkaTopic,
         manager.GdsCommonTimeout)
     assert.Nil(suite.T(), err)
 
@@ -111,7 +111,7 @@ func (suite *SyncGdsTestSuite) TestSyncGdsToKafka() {
     assert.Nil(suite.T(), result.Error)
 
     syscall.Kill(syscall.Getpid(), syscall.SIGINT) 
-    time.Sleep(10)
+    time.Sleep(10000)
 
     assert.Equal(suite.T(), 1, cnt)
 }

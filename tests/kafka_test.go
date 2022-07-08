@@ -24,7 +24,7 @@ func (suite *KafkaTestSuite) TestPubSub() {
     cnt := 0
     p, err := kafka.NewProducer(
         1, 1, 
-        []string{"kafka:9092"},
+        []string{"production-kafka:9092"},
         "gds",
         time.Minute)
     assert.Nil(suite.T(), err)
@@ -33,7 +33,7 @@ func (suite *KafkaTestSuite) TestPubSub() {
     c, err := kafka.NewConsumer(
         "test1",
         []string{"gds"},
-        []string{"kafka:9092"},
+        []string{"production-kafka:9092"},
         100 * time.Millisecond)
     assert.Nil(suite.T(), err)
     defer c.Close()

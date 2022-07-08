@@ -36,12 +36,19 @@ type StagingParams struct {
     Timeout             time.Duration
 }
 
+type packet struct {
+    dsn     int             `json:"dsn"`
+    gds     db.GdsMessage   `json:"data"`
+}
+
 type implProcessGdsManager struct {
     syncFromStaging             sync_gds_manager.SynchronizeGdsManager
     publishFromProduction       kafka.Producer
     subscribeFromCache          kafka.Consumer
     subscribeFromProduction     kafka.Consumer
-    dbConn                      *gorm.DB
+    dbConnList                  []*gorm.DB
+    mapOfTables                 []map[string][]string
+    mapOfSchema                 map[string]int
     isTesting                   bool
 }
 
@@ -113,15 +120,14 @@ func (self *implProcessGdsManager) handleBatchGdsMessage(
     batch []interface{},
     revert bool,
 ) error {
-
     for _, msg := range batch { 
-        gdsMsg, ok := msg.(db.GdsMessage)
+        pkt, ok := msg.(packet)
         if !ok {
             return errors.New("can't parse gds message")
         }
 
         // @TODO: how to handle error, do we need to push it to log center
-        err := self.handleGdsMessage(gdsMsg, revert)
+        err := self.handleGdsMessage(self.dbConnList[pkt.dsn], pkt.gds, revert)
         if err != nil {
             return err
         }
@@ -130,7 +136,11 @@ func (self *implProcessGdsManager) handleBatchGdsMessage(
     return nil
 }
 
-func (self *implProcessGdsManager) handleGdsMessage(msg db.GdsMessage, revert bool) error {
+func (self *implProcessGdsManager) handleGdsMessage(
+    dbConn *gorm.DB,
+    msg db.GdsMessage,
+    revert bool,
+) error {
     var query string
 
     switch msg.Action {
@@ -153,8 +163,6 @@ func (self *implProcessGdsManager) handleGdsMessage(msg db.GdsMessage, revert bo
                             msg.Table,
                             strings.Join(columns, ", "),
                             strings.Join(values, ", "))
-        tx := self.dbConn.Exec(query)
-        return tx.Error
 
     case "UPDATE":
         templateOfIdName := []string{"id", "ID", "Id", "iD"}
@@ -222,7 +230,7 @@ func (self *implProcessGdsManager) handleGdsMessage(msg db.GdsMessage, revert bo
     }
 
     // @TODO: log query to log center for debuging
-    tx := self.dbConn.Exec(query)
+    tx := dbConn.Exec(query)
     return tx.Error
 
 }
@@ -230,11 +238,26 @@ func (self *implProcessGdsManager) handleGdsMessage(msg db.GdsMessage, revert bo
 func NewProcessGdsManager(
     prodParams ProductionParams,
     stagParams StagingParams,
-    dsn        string,
+    dsnList    []string,
 ) (ProcessGdsManager, error) {
-    dbConn, err := gorm.Open(postgres.Open(dsn), &gorm.Config{}) 
-    if err != nil {
-        return nil, err
+    dbConnList := make([]*gorm.DB, 0)
+
+    for _, dsn := range dsnList {
+        dbConn, err := gorm.Open(postgres.Open(dsn), &gorm.Config{}) 
+        if err != nil {
+            return nil, err
+        }
+
+        db, err := dbConn.DB()
+        if err != nil {
+            return nil, err
+        }
+
+        db.SetMaxIdleConns(10)
+        db.SetMaxOpenConns(100)
+        db.SetConnMaxLifetime(time.Hour)
+
+        dbConnList = append(dbConnList, dbConn)
     }
 
     productionProducer, err := kafka.NewProducer( 
@@ -267,7 +290,7 @@ func NewProcessGdsManager(
 
     // @TODO: change the way to handle multiple dsn
     stagingSyncManager, err := sync_gds_manager.NewSynchronizeGdsManager(
-        []string{dsn},
+        dsnList,
         stagParams.NumPartitions,
         stagParams.ReplicationFactor,
         stagParams.Brokers,
@@ -277,17 +300,8 @@ func NewProcessGdsManager(
         return nil, err
     }
 
-    db, err := dbConn.DB()
-    if err != nil {
-        return nil, err
-    }
-
-    db.SetMaxIdleConns(10)
-    db.SetMaxOpenConns(100)
-    db.SetConnMaxLifetime(time.Hour)
-
     return &implProcessGdsManager{
-        dbConn:                  dbConn,
+        dbConnList:              dbConnList,
         syncFromStaging:         stagingSyncManager,
         publishFromProduction:   productionProducer,
         subscribeFromCache:      cacheConsumer,

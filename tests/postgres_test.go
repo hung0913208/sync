@@ -33,7 +33,7 @@ func (self *Test) TableName() string {
 }
 
 func (suite *PostgresTestSuite) SetupSuite() {
-    dsn := "host=postgres user=postgres password=postgres port=5432 sslmode=disable"
+    dsn := "host=production-postgres user=postgres password=postgres port=5432 sslmode=disable"
 
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{}) 
     if err != nil {
@@ -43,7 +43,7 @@ func (suite *PostgresTestSuite) SetupSuite() {
     db.Exec("DROP DATABASE IF EXISTS test_db;")
     db.Exec("CREATE DATABASE test_db;")
 
-    dsn = "host=postgres user=postgres password=postgres dbname=test_db port=5432 sslmode=disable"
+    dsn = "host=production-postgres user=postgres password=postgres dbname=test_db port=5432 sslmode=disable"
 
     db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{}) 
     if err != nil {

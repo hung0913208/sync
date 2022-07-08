@@ -93,15 +93,17 @@ func (self *implSynchronizeGdsManager) Close() {
 }
 
 func (self *implSynchronizeGdsManager) pushGdsToKafka(service string, id int) notify.Handler {
-	return func(msg string) error {
-		err := self.producer.PublishMessage(service, msg)
-		if err == nil {
-			if monitor, ok := self.monitors[service]; ok {
-				monitor(id, msg)
-			}
-		}
-		return err
-	}
+    return func(msg string) error {
+        pkt := fmt.Sprintf("{\"dsn\": %d, \"data\": %s}", id, msg)
+        err := self.producer.PublishMessage(service, pkt)
+
+        if err == nil {
+            if monitor, ok := self.monitors[service]; ok {
+                monitor(id, pkt)                
+            }
+        }
+        return err
+    }
 }
 
 func NewSynchronizeGdsManager(

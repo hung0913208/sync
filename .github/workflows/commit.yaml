@@ -11,7 +11,7 @@ jobs:
     container: ubuntu:latest
 
     services:
-      postgres:
+      production-postgres:
         image: postgres
         env:
           POSTGRES_PASSWORD: postgres
@@ -21,26 +21,51 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-      zookeeper:
+      production-zookeeper:
         image: bitnami/zookeeper
-        ports:
-          - 2181:2181
         env:
           ALLOW_ANONYMOUS_LOGIN: yes
           ZOOKEEPER_CLIENT_PORT: 2181
           ZOOKEEPER_TICK_TIME: 2000
           ZOOKEEPER_SYNC_LIMIT: 2
 
-      kafka:
+      production-kafka:
         image: bitnami/kafka
-        ports:
-          - 9092:9092
         env:
           KAFKA_BROKER_ID: 1
           KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
           ALLOW_PLAINTEXT_LISTENER: yes
-          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+          KAFKA_ZOOKEEPER_CONNECT: production-zookeeper:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://production-kafka:9092
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_CREATE_TOPICS: "gds-topic:1:1"
+
+      staging-postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      staging-zookeeper:
+        image: bitnami/zookeeper
+        env:
+          ALLOW_ANONYMOUS_LOGIN: yes
+          ZOOKEEPER_CLIENT_PORT: 2181
+          ZOOKEEPER_TICK_TIME: 2000
+          ZOOKEEPER_SYNC_LIMIT: 2
+
+      staging-kafka:
+        image: bitnami/kafka
+        env:
+          KAFKA_BROKER_ID: 1
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+          ALLOW_PLAINTEXT_LISTENER: yes
+          KAFKA_ZOOKEEPER_CONNECT: staging-zookeeper:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://staging-kafka:9092
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
           KAFKA_CREATE_TOPICS: "gds-topic:1:1"
 
@@ -53,16 +78,14 @@ jobs:
           DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt install -y golang make postgresql git kafkacat
 
       - name: Validate postgreqsql server has started
-        run: pg_isready -U "postgres" -h postgres -p 5432
+        run: |
+          pg_isready -U "postgres" -h production-postgres -p 5432
+          pg_isready -U "postgres" -h staging-postgres -p 5432
 
       - name: Validate kafka
         run: |
-          for i in {0..10}; do
-            kafkacat -b kafka:9092 -L
-            sleep 10
-          done
-
-          kafkacat -P -b kafka:9092 -t awesome-topic
+          kafkacat -P -b production-kafka:9092 -t awesome-topic
+          kafkacat -P -b staging-kafka:9092 -t awesome-topic
 
       - name: Run unit test suites
         run: make test

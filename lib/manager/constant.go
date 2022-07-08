@@ -8,15 +8,24 @@ const (
     PostgresNotifierKey     = "postgres"
     KafkaNumPartitions      = 1
     KafkaReeplicationFactor = 1
-    GdsKafkaTopic           = "gds"
+    ProductionGdsKafkaTopic = "gds-production"
+    StagingGdsKafkaTopic    = "gds-staging"
+    ProductionKafkaGroup    = "gds-production"
+    StagingKafkaGroup       = "gds-staging"
     GdsCommonTimeout        = 30 * time.Second
 )
 
 var (
-    PostgresDsnList = []string{        
-        "host=postgres user=postgres password=postgres port=5432 sslmode=disable",
+    ProductionPostgresDsnList = []string{        
+        "host=production-postgres user=postgres password=postgres port=5432 sslmode=disable",
     }
-    KafkaBrokerList = []string{
-        "kafka:9092",
+    StagingPostgresDsnList = []string{
+        "host=staging-postgres user=postgres password=postgres port=5432 sslmode=disable",
+    }
+    ProductionKafkaBrokerList = []string{
+        "production-kafka:9092",
+    }
+    StagingKafkaBrokerList = []string{
+        "staging-kafka:9092",
     }
 )
