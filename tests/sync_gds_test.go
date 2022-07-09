@@ -6,10 +6,13 @@ import (
     "testing"
     "syscall"
     "time"
+    "fmt"
     "os"
 
     "alpaca.vn/libra/devops/sync/lib/manager/sync_gds_manager"
+    "alpaca.vn/libra/devops/sync/lib/manager/proc_gds_manager"
     "alpaca.vn/libra/devops/sync/lib/manager"
+    "alpaca.vn/libra/devops/sync/lib/db"
 
     "github.com/stretchr/testify/assert"
     "github.com/stretchr/testify/suite"
@@ -79,7 +82,10 @@ func (suite *SyncGdsTestSuite) SetupSuite() {
 }
 
 func (suite *SyncGdsTestSuite) TestSyncGdsToKafka() {
-    cnt := 0
+    cntSyncGdsToKafka := 0
+    cntCommitGdsToDb := 0
+    cntCachingGds := 0
+
     syncGdsManager, err := sync_gds_manager.NewSynchronizeGdsManager(
         manager.ProductionPostgresDsnList,
         manager.KafkaNumPartitions,
@@ -89,19 +95,54 @@ func (suite *SyncGdsTestSuite) TestSyncGdsToKafka() {
         manager.GdsCommonTimeout)
     assert.Nil(suite.T(), err)
 
+    procGdsManager, err := proc_gds_manager.NewProcessGdsManager(
+        proc_gds_manager.ProductionParams{
+            Group:              manager.ProductionKafkaGroup,
+            Topics:             []string{manager.ProductionGdsKafkaTopic},
+            Brokers:            manager.ProductionKafkaBrokerList,
+            ProducerTimeout:    manager.GdsCommonTimeout,
+            ConsumerTimeout:    manager.GdsConsumeTimeout,
+        },
+        proc_gds_manager.StagingParams{
+            NumPartitions:      manager.KafkaNumPartitions,
+            ReplicationFactor:  manager.KafkaReeplicationFactor,
+            Brokers:            manager.StagingKafkaBrokerList,
+            ProductionTopic:    manager.ProductionGdsKafkaTopic,
+            StagingTopic:       manager.StagingGdsKafkaTopic,
+            Group:              manager.StagingKafkaGroup,
+            ProducerTimeout:    manager.GdsCommonTimeout,
+            ConsumerTimeout:    manager.GdsConsumeTimeout,
+        },
+        manager.StagingPostgresDsnList)
+    assert.Nil(suite.T(), err)
+
     err = syncGdsManager.RegisterTable(
         sync_gds_manager.PostgresNotifierKey,
         0,
         "test_tab")
     assert.Nil(suite.T(), err)
 
-    syncGdsManager.RegisterMonitor(
-        manager.PostgresNotifierKey,
+    syncGdsManager.Monitor(
+        sync_gds_manager.PostgresNotifierKey,
         func(id int, msg string) {
             assert.Equal(suite.T(), 0, id)
-            cnt += 1
+            cntSyncGdsToKafka += 1
         },
     )
+
+    procGdsManager.Monitor(
+        func (batch []interface{}) {
+            fmt.Println("batch", batch)
+            cntCachingGds += 1
+        },
+        func (gds db.GdsMessage, isRevert bool, query string) {
+            fmt.Println("query", query)
+            cntCommitGdsToDb += 1
+        },
+    )
+
+    time.Sleep(100000)
+    procGdsManager.DisableTesting()
 
     go func() {
         syncGdsManager.HandleSyncGdsToKafka(time.Minute)
@@ -110,8 +151,35 @@ func (suite *SyncGdsTestSuite) TestSyncGdsToKafka() {
     result := suite.db.Create(&Test{Name: "test"})
     assert.Nil(suite.T(), result.Error)
 
-    syscall.Kill(syscall.Getpid(), syscall.SIGINT) 
-    time.Sleep(10000)
+    syncGdsManager.Flush()
+    procGdsManager.Flush()
+    time.Sleep(100000)
 
-    assert.Equal(suite.T(), 1, cnt)
+    assert.Equal(suite.T(), 1, cntSyncGdsToKafka)
+    assert.Equal(suite.T(), 1, cntCommitGdsToDb)
+    
+    //procGdsManager.EnableTesting()
+    //time.Sleep(50000)
+
+    //result = suite.db.Create(&Test{Name: "test"})
+    //assert.Nil(suite.T(), result.Error)
+
+    //syncGdsManager.Flush()
+    //procGdsManager.Flush()
+    //time.Sleep(50000)
+
+    //procGdsManager.DisableTesting()
+    //time.Sleep(10)
+
+    //syncGdsManager.Flush()
+    //procGdsManager.Flush()
+    //time.Sleep(50000)
+
+    //assert.Equal(suite.T(), 2, cntSyncGdsToKafka)
+    //assert.Equal(suite.T(), 1, cntCachingGds)
+    //assert.Equal(suite.T(), 2, cntCommitGdsToDb)
+
+    syscall.Kill(syscall.Getpid(), syscall.SIGINT) 
+    time.Sleep(100000)
 }
+

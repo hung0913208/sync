@@ -8,6 +8,7 @@ import (
     "strings"
     "errors"
     "time"
+    "fmt"
 )
 
 
@@ -66,6 +67,7 @@ func (self *implProducerClient) PublishBatchWithSameKey(key string, batch []inte
 
 func (self *implProducerClient) Flush() {
     self.producer.Flush(int(self.timeout / time.Millisecond))
+    fmt.Println("flush from producer")
 }
 
 func (self *implProducerClient) Close() {
@@ -121,7 +123,11 @@ func NewProducer(
     if err != nil {
         return nil, err
     }
-    
+        
+    fmt.Println("brokers", brokers)
+    fmt.Println("topic", topic)
+    fmt.Println("timeout", timeout)
+
     err = createTopic(producer, topic, numPartitions, replicationFactor, timeout)
     if err != nil {
         producer.Close()

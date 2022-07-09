@@ -8,22 +8,31 @@ import (
     "gorm.io/driver/postgres"
     "gorm.io/gorm"
 
+    "encoding/json"
     "strings"
-    "errors"
     "time"
     "fmt"
 )
 
+type MonitorCachingHandler func(batch []interface{})
+type MonitorCommitingHandler func(gds db.GdsMessage, isRevert bool, query string)
+
 type ProcessGdsManager interface {
     EnableTesting()
     DisableTesting()
+    Monitor(
+        cache MonitorCachingHandler, 
+        commit MonitorCommitingHandler)
+    Flush()
+    Close()
 }
 
 type ProductionParams struct {
-    Group   string
-    Topics  []string
-    Brokers []string
-    Timeout time.Duration
+    Group               string
+    Topics              []string
+    Brokers             []string
+    ConsumerTimeout     time.Duration
+    ProducerTimeout     time.Duration
 }
 
 type StagingParams struct {
@@ -33,12 +42,13 @@ type StagingParams struct {
     ProductionTopic     string
     StagingTopic        string
     Group               string
-    Timeout             time.Duration
+    ConsumerTimeout     time.Duration
+    ProducerTimeout     time.Duration
 }
 
 type packet struct {
-    dsn     int             `json:"dsn"`
-    gds     db.GdsMessage   `json:"data"`
+    Dsn     int             `json:"dsn"`
+    Gds     db.GdsMessage   `json:"data"`
 }
 
 type implProcessGdsManager struct {
@@ -50,6 +60,8 @@ type implProcessGdsManager struct {
     mapOfTables                 []map[string][]string
     mapOfSchema                 map[string]int
     isTesting                   bool
+    monitorCachingHandlers      []MonitorCachingHandler
+    monitorCommitingHandlers    []MonitorCommitingHandler
 }
 
 func (self *implProcessGdsManager) EnableTesting() {
@@ -78,13 +90,31 @@ func (self *implProcessGdsManager) DisableTesting() {
     }
 }
 
+func (self *implProcessGdsManager) Monitor(
+    cache MonitorCachingHandler, 
+    commit MonitorCommitingHandler,
+) {
+    self.monitorCachingHandlers = append(self.monitorCachingHandlers, cache)
+    self.monitorCommitingHandlers = append(self.monitorCommitingHandlers, commit)
+}
+
+func (self *implProcessGdsManager) Flush() { 
+    self.publishFromProduction.Flush()
+}
+
+func (self *implProcessGdsManager) Close() {
+    self.publishFromProduction.Close()
+    self.subscribeFromCache.Close()
+    self.subscribeFromProduction.Close()
+}
+
 func (self *implProcessGdsManager) startSyncingGdsToDb() {
     self.subscribeFromProduction.Subscribe(
-        PostgresNotifierKey,
+        sync_gds_manager.PostgresNotifierKey,
         self.syncGdsToPostgresDb)
 
     self.subscribeFromCache.Subscribe(
-        PostgresNotifierKey,
+        sync_gds_manager.PostgresNotifierKey,
         self.syncProductionCacheToDb)
 }
 
@@ -106,10 +136,10 @@ func (self *implProcessGdsManager) revertTestingRecordFromStagingDb(batch []inte
 
 func (self *implProcessGdsManager) syncGdsToPostgresDb(batch []interface{}) error {
     if self.isTesting {
-        // @TODO: how to handle error, do we need to push it to log center
+        self.onCaching(batch)
 
         return self.publishFromProduction.PublishBatchWithSameKey(
-            PostgresNotifierKey,
+            sync_gds_manager.PostgresNotifierKey,
             batch)
     } else {
         return self.handleBatchGdsMessage(batch, false)
@@ -121,13 +151,14 @@ func (self *implProcessGdsManager) handleBatchGdsMessage(
     revert bool,
 ) error {
     for _, msg := range batch { 
-        pkt, ok := msg.(packet)
-        if !ok {
-            return errors.New("can't parse gds message")
+        var pkt packet
+
+        if err := json.Unmarshal([]byte(msg.(string)), &pkt); err != nil {
+            return err 
         }
 
         // @TODO: how to handle error, do we need to push it to log center
-        err := self.handleGdsMessage(self.dbConnList[pkt.dsn], pkt.gds, revert)
+        err := self.handleGdsMessage(self.dbConnList[pkt.Dsn], pkt.Gds, revert)
         if err != nil {
             return err
         }
@@ -150,7 +181,7 @@ func (self *implProcessGdsManager) handleGdsMessage(
 
         for columnName, value := range msg.New {
             columns = append(columns, columnName)
-            
+
             if _, ok := value.(string); ok {
                 values = append(values, fmt.Sprintf("\"%s\"", value))
             } else {
@@ -166,13 +197,28 @@ func (self *implProcessGdsManager) handleGdsMessage(
 
     case "UPDATE":
         templateOfIdName := []string{"id", "ID", "Id", "iD"}
+        condition := ""
         columns := make([]string, 0)
         values := make([]string, 0)
-        condition := ""
+        recordOld := msg.Old
+        recordNew := msg.New
 
-        for _, possibleName := range templateOfIdName {
-            if _, ok := msg.Old[possibleName]; ok {
-                condition = fmt.Sprintf("")
+        if revert {
+            recordOld = msg.New
+            recordNew = msg.Old
+        }
+
+        for _, possibleName := range templateOfIdName { 
+            if value, ok := recordOld[possibleName]; ok {
+                data := ""
+
+                if _, ok := value.(string); ok {
+                    data = fmt.Sprintf("\"%s\"", value)
+                } else {
+                    data = fmt.Sprint(value)
+                }
+
+                condition = fmt.Sprintf("%s = %s", possibleName, data)
                 break
             } 
         }
@@ -182,7 +228,7 @@ func (self *implProcessGdsManager) handleGdsMessage(
             fields := make([]string, 0)
             data := make([]string, 0)
 
-            for columnName, value := range msg.Old {
+            for columnName, value := range recordOld {
                 for _, possibleName := range templateOfIdName {
                     if strings.Contains(columnName, possibleName) {
                         fields = append(fields, columnName)
@@ -207,8 +253,7 @@ func (self *implProcessGdsManager) handleGdsMessage(
             }
         }
 
-
-        for columnName, value := range msg.New {
+        for columnName, value := range recordNew {
             columns = append(columns, columnName)
             
             if _, ok := value.(string); ok {
@@ -229,10 +274,26 @@ func (self *implProcessGdsManager) handleGdsMessage(
         return nil
     }
 
-    // @TODO: log query to log center for debuging
+    self.onCommiting(msg, revert, query)
+
     tx := dbConn.Exec(query)
     return tx.Error
+}
 
+func (self *implProcessGdsManager) onCaching(batch []interface{}) {
+    for _, handler := range self.monitorCachingHandlers {
+        handler(batch)
+    }
+}
+
+func (self *implProcessGdsManager) onCommiting(
+    msg db.GdsMessage,
+    revert bool,
+    query string,
+) {
+    for _, handler := range self.monitorCommitingHandlers {
+        handler(msg, revert, query)
+    }
 }
 
 func NewProcessGdsManager(
@@ -260,42 +321,41 @@ func NewProcessGdsManager(
         dbConnList = append(dbConnList, dbConn)
     }
 
-    productionProducer, err := kafka.NewProducer( 
+    pushProductionToCacheProducer, err := kafka.NewProducer( 
         stagParams.NumPartitions,
         stagParams.ReplicationFactor,
         stagParams.Brokers,
         stagParams.ProductionTopic,
-        stagParams.Timeout)
+        stagParams.ProducerTimeout)
     if err != nil {
         return nil, err
     }
 
-    productionConsumer, err := kafka.NewConsumer(
+    pushProductionToDbConsumer, err := kafka.NewConsumer(
         prodParams.Group, 
         prodParams.Topics, 
         prodParams.Brokers, 
-        prodParams.Timeout)
+        prodParams.ConsumerTimeout)
     if err != nil {
         return nil, err
     }
 
-    cacheConsumer, err := kafka.NewConsumer(
+    pushCacheToDbConsumer, err := kafka.NewConsumer(
         stagParams.Group, 
-        []string{stagParams.ProductionTopic},
+        []string{stagParams.StagingTopic},
         stagParams.Brokers,
-        stagParams.Timeout)
+        stagParams.ConsumerTimeout)
     if err != nil {
         return nil, err
     }
 
-    // @TODO: change the way to handle multiple dsn
     stagingSyncManager, err := sync_gds_manager.NewSynchronizeGdsManager(
         dsnList,
         stagParams.NumPartitions,
         stagParams.ReplicationFactor,
         stagParams.Brokers,
         stagParams.StagingTopic,
-        stagParams.Timeout)
+        stagParams.ProducerTimeout)
     if err != nil {
         return nil, err
     }
@@ -303,9 +363,9 @@ func NewProcessGdsManager(
     return &implProcessGdsManager{
         dbConnList:              dbConnList,
         syncFromStaging:         stagingSyncManager,
-        publishFromProduction:   productionProducer,
-        subscribeFromCache:      cacheConsumer,
-        subscribeFromProduction: productionConsumer,
+        publishFromProduction:   pushProductionToCacheProducer,
+        subscribeFromCache:      pushCacheToDbConsumer,
+        subscribeFromProduction: pushProductionToDbConsumer,
     }, nil
 }
 

@@ -12,7 +12,8 @@ const (
     StagingGdsKafkaTopic    = "gds-staging"
     ProductionKafkaGroup    = "gds-production"
     StagingKafkaGroup       = "gds-staging"
-    GdsCommonTimeout        = 30 * time.Second
+    GdsCommonTimeout        = time.Second
+    GdsConsumeTimeout       = 100 * time.Millisecond
 )
 
 var (

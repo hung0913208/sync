@@ -16,7 +16,8 @@ type Monitor func(id int, msg string)
 
 type SynchronizeGdsManager interface {
 	RegisterTable(service string, notifierIdx int, table string) error
-	RegisterMonitor(service string, monitor Monitor)
+	Monitor(service string, monitor Monitor)
+    Flush()
 	HandleSyncGdsToKafka(timeout time.Duration)
 	HandleSyncGdsToKafkaInBackground(timeou time.Duration)
 }
@@ -45,7 +46,7 @@ func (self *implSynchronizeGdsManager) RegisterTable(
 	return self.mapOfNotifiers[service][notifierIdx].Register(table)
 }
 
-func (self *implSynchronizeGdsManager) RegisterMonitor(
+func (self *implSynchronizeGdsManager) Monitor(
 	service string,
 	monitor Monitor,
 ) {
@@ -87,7 +88,12 @@ func (self *implSynchronizeGdsManager) HandleSyncGdsToKafkaInBackground(timeout 
 	}
 }
 
+func (self *implSynchronizeGdsManager) Flush() {
+    self.producer.Flush()
+}
+
 func (self *implSynchronizeGdsManager) Close() {
+    self.Flush()
 	self.running = false
 	self.wg.Wait()
 }

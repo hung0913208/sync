@@ -22,9 +22,10 @@ func NewDependencies(isStaging bool) (*Dependencies, error) {
         procGdsManager, err = proc_gds_manager.NewProcessGdsManager(
             proc_gds_manager.ProductionParams{
                 Group:   ProductionKafkaGroup,
-                Topics:  ProductionKafkaBrokerList,
+                Topics:  []string{ProductionGdsKafkaTopic},
                 Brokers: ProductionKafkaBrokerList,
-                Timeout: GdsCommonTimeout,
+                ProducerTimeout: GdsCommonTimeout,
+                ConsumerTimeout: GdsConsumeTimeout,
             },
             proc_gds_manager.StagingParams{
                 NumPartitions:      KafkaNumPartitions,
@@ -33,7 +34,8 @@ func NewDependencies(isStaging bool) (*Dependencies, error) {
                 ProductionTopic:    ProductionGdsKafkaTopic,
                 StagingTopic:       StagingGdsKafkaTopic,
                 Group:              StagingKafkaGroup,
-                Timeout:            GdsCommonTimeout,
+                ProducerTimeout:    GdsCommonTimeout,
+                ConsumerTimeout:    GdsConsumeTimeout,
             },
             StagingPostgresDsnList)
     } else {

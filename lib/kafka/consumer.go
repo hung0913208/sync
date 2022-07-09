@@ -40,8 +40,11 @@ func (self *implConsumerClient) Subscribe(key string, handler Handler) error {
             for {
                 select {
                 case <- self.locked:
+                    fmt.Println("locked")
                     <-self.unlocked
+                    fmt.Println("unlocked")
                 case <- self.closing:
+                    fmt.Println("closed")
                     self.closed <- true
                     return
                 default:
@@ -49,7 +52,7 @@ func (self *implConsumerClient) Subscribe(key string, handler Handler) error {
                     if err != nil {
                         continue
                     }
-
+                    fmt.Println(msg)
                     key := string(msg.Key)
                     value := msg.Value
                     batch := []interface{}{}
@@ -69,8 +72,6 @@ func (self *implConsumerClient) Subscribe(key string, handler Handler) error {
                         if err != nil {
                             self.HandleError(err)
                         }
-                    } else {
-                        fmt.Println(key)
                     }
                 }
             }
@@ -120,6 +121,10 @@ func NewConsumer(
         return nil, err
     }
 
+    fmt.Println("group", group)
+    fmt.Println("topics", topics)
+    fmt.Println("brokers", brokers)
+    fmt.Println("timeout", timeout)
     return &implConsumerClient{
         consumer:   consumer,
         timeout:    timeout,
